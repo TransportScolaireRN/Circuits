@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Circuits — Transport scolaire</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1c2128">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Circuits">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --asphalt:#1c2128;
+    --asphalt-2:#262d38;
+    --asphalt-3:#333c48;
+    --line-yellow:#ffc72c;
+    --line-yellow-dim:#a67f1a;
+    --paper:#f6f5f1;
+    --ink:#1c2128;
+    --muted:#8b93a3;
+    --danger:#e05252;
+    --good:#7fd88f;
+    --font-display: 'Rockwell', 'Roboto Slab', Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: 'SF Mono', 'Consolas', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:var(--font-body);
+    background:var(--asphalt);
+    color:var(--paper);
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+  }
+
+  /* ---- Sidebar / bottom sheet ---- */
+  #sidebar{
+    width:360px;
+    min-width:360px;
+    background:var(--asphalt);
+    border-right:4px solid var(--line-yellow);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+    z-index:900;
+  }
+  #sidebar::before{
+    content:"";
+    position:absolute;
+    left:0;right:0;top:0;
+    height:6px;
+    background:repeating-linear-gradient(90deg, var(--line-yellow) 0 24px, transparent 24px 40px);
+    opacity:.9;
+  }
+  #sheetHandle{ display:none; }
+
+  .brand{
+    padding:20px 20px 12px;
+    border-bottom:1px solid var(--asphalt-3);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .brand .eyebrow{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    color:var(--line-yellow);
+    text-transform:uppercase;
+  }
+  .brand h1{
+    font-family:var(--font-display);
+    font-size:21px;
+    margin:4px 0 0;
+    letter-spacing:.01em;
+  }
+  .brand .toggle-import{
+    background:transparent; border:1px solid var(--asphalt-3); color:var(--muted);
+    font-size:11px; padding:6px 10px;
+  }
+  .brand .toggle-import:hover{ border-color:var(--line-yellow); color:var(--line-yellow); }
+
+  .panel{
+    padding:14px 20px;
+    border-bottom:1px solid var(--asphalt-3);
+  }
+  .panel h2{
+    font-family:var(--font-mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.12em;
+    color:var(--muted);
+    margin:0 0 10px;
+  }
+  #importPanel.hidden{ display:none; }
+
+  textarea{
+    width:100%;
+    height:80px;
+    resize:vertical;
+    background:var(--asphalt-2);
+    color:var(--paper);
+    border:1px solid var(--asphalt-3);
+    border-radius:4px;
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    padding:8px;
+  }
+  .row{display:flex;gap:8px;margin-top:8px;}
+  button{
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:12.5px;
+    border:none;
+    border-radius:4px;
+    padding:9px 12px;
+    cursor:pointer;
+    transition:transform .08s ease, filter .12s ease;
+  }
+  button:active{transform:scale(.97);}
+  .btn-primary{background:var(--line-yellow); color:var(--asphalt);}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent; color:var(--paper); border:1px solid var(--asphalt-3);}
+  .btn-ghost:hover{border-color:var(--line-yellow); color:var(--line-yellow);}
+  .btn-ghost.small{ padding:6px 9px; font-size:11px; }
+  input[type=file]{display:none;}
+  .file-label{
+    display:inline-block;
+    font-size:12.5px;
+    font-weight:600;
+    padding:9px 12px;
+    border:1px solid var(--asphalt-3);
+    border-radius:4px;
+    cursor:pointer;
+    color:var(--paper);
+  }
+  .file-label:hover{border-color:var(--line-yellow); color:var(--line-yellow);}
+
+  #status{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--muted);
+    margin-top:8px;
+    min-height:14px;
+  }
+  #status.err{color:var(--danger);}
+  #status.ok{color:var(--good);}
+
+  .format-hint{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    color:var(--muted);
+    line-height:1.6;
+    margin-top:10px;
+    padding:10px;
+    background:var(--asphalt-2);
+    border-radius:4px;
+    border-left:3px solid var(--line-yellow-dim);
+  }
+  .format-hint b{color:var(--paper);}
+
+  /* ---- Library ---- */
+  #libHeader{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px 8px;
+  }
+  #libHeader h2{margin:0;}
+  #libCount{font-family:var(--font-mono); font-size:11px; color:var(--muted);}
+  #searchWrap{ padding:0 20px 10px; }
+  #searchInput{
+    width:100%;
+    background:var(--asphalt-2);
+    border:1px solid var(--asphalt-3);
+    color:var(--paper);
+    border-radius:20px;
+    padding:9px 14px;
+    font-size:13px;
+  }
+  #searchInput:focus{ outline:none; border-color:var(--line-yellow); }
+  #bulkRow{ padding:0 20px 10px; display:flex; gap:8px; }
+
+  #routeList{
+    flex:1;
+    overflow-y:auto;
+    padding:4px 12px 20px;
+  }
+  .route-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:10px 8px;
+    border-radius:6px;
+    margin-bottom:4px;
+  }
+  .route-item:hover{background:var(--asphalt-2);}
+  .swatch{
+    width:14px;height:14px;border-radius:3px;flex:none;
+    box-shadow:0 0 0 2px rgba(255,255,255,.15) inset;
+  }
+  .route-item .meta{flex:1; min-width:0; cursor:pointer;}
+  .route-item .name{font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .route-item .count{font-family:var(--font-mono); font-size:10.5px; color:var(--muted);}
+  .route-item input[type=checkbox]{accent-color:var(--line-yellow); width:16px; height:16px; flex:none;}
+  .icon-btn{
+    flex:none; width:26px; height:26px; border-radius:50%;
+    background:transparent; border:1px solid var(--asphalt-3); color:var(--muted);
+    display:flex; align-items:center; justify-content:center; font-size:12px; padding:0;
+  }
+  .icon-btn:hover{ border-color:var(--line-yellow); color:var(--line-yellow); }
+  .icon-btn.danger:hover{ border-color:var(--danger); color:var(--danger); }
+  .empty-state{
+    padding:24px 12px; text-align:center; color:var(--muted); font-size:12.5px; line-height:1.6;
+  }
+
+  /* ---- Map ---- */
+  #mapWrap{flex:1; position:relative;}
+  #map{width:100%; height:100%; background:var(--paper);}
+  .leaflet-popup-content-wrapper{ background:var(--asphalt); color:var(--paper); border-radius:6px; }
+  .leaflet-popup-content{font-family:var(--font-body); font-size:13px;}
+  .leaflet-popup-content b{color:var(--line-yellow);}
+  .leaflet-popup-tip{background:var(--asphalt);}
+  .stop-badge{
+    background:var(--asphalt); color:var(--line-yellow);
+    border:2px solid var(--line-yellow); border-radius:50%;
+    width:20px;height:20px; display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-mono); font-size:10px; font-weight:700;
+  }
+
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--asphalt-3); border-radius:4px;}
+
+  /* ---- Navigation overlay ---- */
+  #navPanel{
+    position:absolute;
+    top:16px; left:16px; right:16px;
+    max-width:440px;
+    background:var(--asphalt);
+    border:2px solid var(--line-yellow);
+    border-radius:10px;
+    padding:14px 16px;
+    z-index:800;
+    display:none;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #navPanel.active{display:block;}
+  #navPanel .nav-top{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--line-yellow); margin-bottom:6px;
+  }
+  #navPanel .nav-stop{ font-family:var(--font-display); font-size:19px; margin:2px 0 8px; }
+  .nav-metrics{ display:flex; gap:18px; }
+  .nav-metric .val{ font-family:var(--font-mono); font-size:24px; font-weight:700; color:var(--line-yellow); line-height:1.1;}
+  .nav-metric .lbl{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  #navPanel .nav-sub{font-size:12px; color:var(--muted); margin-top:8px;}
+  #navPanel .nav-stop-btn{
+    margin-top:10px; background:transparent; border:1px solid var(--asphalt-3);
+    color:var(--paper); width:100%;
+  }
+  #navPanel .nav-stop-btn:hover{border-color:var(--danger); color:var(--danger);}
+  #navPanel .nav-error{color:var(--danger); font-size:12px; margin-top:8px; display:none;}
+
+  .live-dot{
+    width:18px;height:18px; border-radius:50%; background:#4fb0ff;
+    border:3px solid #fff; box-shadow:0 0 0 6px rgba(79,176,255,.25);
+  }
+  .live-heading{
+    width:0;height:0; border-left:7px solid transparent; border-right:7px solid transparent;
+    border-bottom:14px solid #4fb0ff; position:absolute; top:-16px; left:50%;
+    transform-origin:50% 22px; margin-left:-7px;
+  }
+
+  /* ---- Mobile: bottom sheet ---- */
+  @media (max-width: 768px){
+    body{ flex-direction:column; }
+    #sidebar{
+      position:fixed; left:0; right:0; bottom:0; top:auto;
+      width:auto; min-width:0;
+      height:78vh; max-height:82vh;
+      border-right:none;
+      border-top:4px solid var(--line-yellow);
+      border-radius:18px 18px 0 0;
+      transition:height .22s ease;
+      box-shadow:0 -8px 24px rgba(0,0,0,.4);
+    }
+    #sidebar.collapsed{ height:132px; overflow:hidden; }
+    #sidebar::before{ border-radius:18px 18px 0 0; }
+    #sheetHandle{
+      display:flex; justify-content:center; padding:8px 0 2px; cursor:pointer;
+    }
+    #sheetHandle .bar{ width:40px; height:5px; border-radius:3px; background:var(--asphalt-3); }
+    #mapWrap{ position:fixed; inset:0; }
+    #navPanel{ top:12px; left:12px; right:12px; max-width:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sheetHandle" onclick="toggleSheet()"><div class="bar"></div></div>
+  <div class="brand">
+    <div>
+      <div class="eyebrow">Transport scolaire</div>
+      <h1>Circuits</h1>
+    </div>
+    <button class="toggle-import" onclick="toggleImportPanel()">+ Importer</button>
+  </div>
+
+  <div class="panel" id="importPanel">
+    <h2>Importer un circuit (CSV)</h2>
+    <textarea id="csvInput" spellcheck="false"></textarea>
+    <div class="row">
+      <label class="file-label">Choisir un fichier
+        <input type="file" id="fileInput" accept=".csv,text/csv">
+      </label>
+      <button class="btn-primary" id="loadBtn">Ajouter à la bibliothèque</button>
+    </div>
+    <div id="status"></div>
+    <div class="format-hint">
+      Colonnes attendues : <b>circuit, arret, latitude, longitude, ordre</b><br>
+      (accepte aussi les exports du logiciel de transport scolaire — Nom du circuit/parcours, Nom du point de service, Numéro de séquence, avec accents, point-virgule et encodage UTF-16). Chaque import s'ajoute à ta bibliothèque, il ne la remplace pas.
+    </div>
+  </div>
+
+  <div id="libHeader">
+    <h2 style="margin:0;">Bibliothèque</h2>
+    <span id="libCount">0 circuit</span>
+  </div>
+  <div id="searchWrap">
+    <input type="text" id="searchInput" placeholder="Rechercher un circuit…">
+  </div>
+  <div id="bulkRow">
+    <button class="btn-ghost small" onclick="setAllVisible(true)">Tout afficher</button>
+    <button class="btn-ghost small" onclick="setAllVisible(false)">Tout masquer</button>
+    <button class="btn-ghost small" onclick="clearLibrary()">Vider</button>
+  </div>
+  <div id="routeList"></div>
+</div>
+
+<div id="mapWrap">
+  <div id="map"></div>
+  <div id="navPanel">
+    <div class="nav-top"><span id="navCircuitName">Circuit</span><span id="navProgress">1/1</span></div>
+    <div class="nav-stop" id="navStopName">—</div>
+    <div class="nav-metrics">
+      <div class="nav-metric"><div class="val" id="navDist">—</div><div class="lbl">Distance</div></div>
+      <div class="nav-metric"><div class="val" id="navEta">—</div><div class="lbl">Arrivée est.</div></div>
+    </div>
+    <div class="nav-sub" id="navSub">En route vers le prochain arrêt</div>
+    <button class="nav-stop-btn" id="navStopBtn">Terminer la navigation</button>
+    <div class="nav-error" id="navError"></div>
+  </div>
+</div>
+
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(()=>{ /* pas grave si indisponible en aperçu */ });
+  });
+}
+
+const PALETTE = ["#ffc72c","#4fb0ff","#7fd88f","#ff8a5c","#c792ea","#5ce1e6","#ff6b8b","#a3e635","#f6d365","#7a9cff","#ff9ecd","#8ae6cf"];
+
+const map = L.map('map', {zoomControl:false}).setView([46.8139,-71.2080], 12);
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom:19,
+  attribution:'&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let routeLayers = {}; // name -> {polyline, markers group, color, bounds, visible}
+let library = {};     // name -> stops[]
+
+const SAMPLE_CSV = `circuit,arret,latitude,longitude,ordre
+Circuit A,Garage,46.8095,-71.2340,1
+Circuit A,Rue des Érables,46.8127,-71.2255,2
+Circuit A,École St-Jean,46.8150,-71.2150,3
+Circuit A,Avenue Royale,46.8168,-71.2050,4
+Circuit A,École Ste-Marie,46.8180,-71.1950,5`;
+document.getElementById('csvInput').value = SAMPLE_CSV;
+
+/* ---------------- Bibliothèque persistante (localStorage) ---------------- */
+const LIB_KEY = 'circuits_bus_lib_v1';
+let storageOK = true;
+
+function loadLibraryFromStorage(){
+  try{
+    const raw = localStorage.getItem(LIB_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ storageOK = false; return {}; }
+}
+function persistLibrary(){
+  try{
+    localStorage.setItem(LIB_KEY, JSON.stringify(library));
+  }catch(e){
+    storageOK = false;
+    setStatus("Stockage local indisponible dans cet aperçu — héberge le fichier (hors de Claude) pour que ta bibliothèque soit conservée entre deux visites.", 'err');
+  }
+}
+
+function setStatus(msg, kind){
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = kind || '';
+}
+
+function toggleImportPanel(){
+  document.getElementById('importPanel').classList.toggle('hidden');
+}
+function toggleSheet(){
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+/* ---------------- Parsing ---------------- */
+function pick(row, candidates){
+  const keys = Object.keys(row);
+  const norm = s => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  for(const c of candidates){
+    const found = keys.find(k => norm(k) === c);
+    if(found) return row[found];
+  }
+  return undefined;
+}
+
+function buildRoutes(rows){
+  const grouped = {};
+  rows.forEach(row => {
+    const parcours = pick(row, ['nom du parcours','parcours']);
+    const circuitBase = parcours || pick(row, ['circuit','route','nom_circuit','trajet','nom du circuit','numero du circuit']);
+    const periode = pick(row, ['periode']);
+    const circuit = periode && circuitBase && !String(circuitBase).toLowerCase().includes(String(periode).toLowerCase())
+      ? `${circuitBase} (${periode})`
+      : circuitBase;
+
+    const arret = pick(row, ['arret','arrêt','nom','stop','nom_arret','nom du point de service']);
+    const lat = parseFloat(pick(row, ['latitude','lat']));
+    const lon = parseFloat(pick(row, ['longitude','lon','lng']));
+    const ordreRaw = pick(row, ['ordre','order','sequence','seq','numero de sequence']);
+    const ordre = ordreRaw !== undefined ? parseFloat(ordreRaw) : null;
+
+    if(!circuit || isNaN(lat) || isNaN(lon)) return;
+    if(!grouped[circuit]) grouped[circuit] = [];
+    grouped[circuit].push({arret: arret || '', lat, lon, ordre});
+  });
+  Object.keys(grouped).forEach(name => {
+    if(grouped[name].some(s => s.ordre !== null && !isNaN(s.ordre))){
+      grouped[name] = grouped[name].slice().sort((a,b) => (a.ordre ?? 0) - (b.ordre ?? 0));
+    }
+  });
+  return grouped;
+}
+
+function decodeFileBuffer(buffer){
+  const bytes = new Uint8Array(buffer);
+  if(bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(buffer.slice(2));
+  if(bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(buffer.slice(2));
+  const sample = bytes.slice(0, Math.min(500, bytes.length));
+  let zeros = 0;
+  for(let i=0;i<sample.length;i++) if(sample[i] === 0) zeros++;
+  if(zeros / sample.length > 0.25) return new TextDecoder('utf-16le').decode(buffer);
+  return new TextDecoder('utf-8').decode(buffer);
+}
+
+function loadFromText(text){
+  Papa.parse(text, {
+    header:true,
+    skipEmptyLines:true,
+    complete: (res) => {
+      if(res.errors.length){
+        setStatus('Erreur de lecture du CSV — vérifie le format.', 'err');
+        return;
+      }
+      const grouped = buildRoutes(res.data);
+      const names = Object.keys(grouped);
+      if(names.length === 0){
+        setStatus('Aucune ligne valide trouvée — vérifie les colonnes latitude/longitude.', 'err');
+        return;
+      }
+      names.forEach(n => { library[n] = grouped[n]; });
+      persistLibrary();
+      renderLibrary();
+      names.forEach(n => setRouteVisible(n, true));
+      setStatus(`${names.length} circuit(s) ajouté(s) à la bibliothèque.`, 'ok');
+    }
+  });
+}
+
+document.getElementById('loadBtn').addEventListener('click', () => {
+  loadFromText(document.getElementById('csvInput').value);
+});
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const text = decodeFileBuffer(evt.target.result);
+    document.getElementById('csvInput').value = text;
+    loadFromText(text);
+  };
+  reader.readAsArrayBuffer(file);
+});
+document.getElementById('searchInput').addEventListener('input', renderLibrary);
+
+/* ---------------- Tracé sur route réelle (OSRM) ---------------- */
+async function fetchRoadGeometry(stops){
+  if(stops.length < 2) return null;
+  const coords = stops.map(s => `${s.lon},${s.lat}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.code === 'Ok' && data.routes && data.routes[0]){
+      return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    }
+  }catch(e){ /* hors ligne ou service indisponible : on garde la ligne droite */ }
+  return null;
+}
+
+/* ---------------- Affichage de la bibliothèque + carte ---------------- */
+function colorFor(name){
+  let hash = 0;
+  for(let i=0;i<name.length;i++) hash = (hash*31 + name.charCodeAt(i)) % PALETTE.length;
+  return PALETTE[Math.abs(hash)];
+}
+
+function ensureLayer(name){
+  if(routeLayers[name]) return routeLayers[name];
+  const stops = library[name];
+  const color = colorFor(name);
+  const latlngs = stops.map(s => [s.lat, s.lon]);
+  const polyline = L.polyline(latlngs, {color, weight:4, opacity:.85});
+  const markers = L.layerGroup(stops.map((s, idx) => {
+    const icon = L.divIcon({
+      className:'',
+      html:`<div class="stop-badge" style="border-color:${color}; color:${color};">${idx+1}</div>`,
+      iconSize:[20,20], iconAnchor:[10,10]
+    });
+    return L.marker([s.lat, s.lon], {icon}).bindPopup(`<b>${name}</b><br>${s.arret || 'Arrêt '+(idx+1)}`);
+  }));
+  const group = L.layerGroup([polyline, markers]);
+  routeLayers[name] = { polyline, markers, group, color, bounds: L.latLngBounds(latlngs), visible:false };
+
+  fetchRoadGeometry(stops).then(geom => {
+    if(geom && routeLayers[name]) routeLayers[name].polyline.setLatLngs(geom);
+  });
+
+  return routeLayers[name];
+}
+
+function setRouteVisible(name, visible){
+  const layer = ensureLayer(name);
+  layer.visible = visible;
+  if(visible) map.addLayer(layer.group); else map.removeLayer(layer.group);
+  const cb = document.querySelector(`.route-item input[data-name="${CSS.escape(name)}"]`);
+  if(cb) cb.checked = visible;
+}
+
+function setAllVisible(visible){
+  Object.keys(library).forEach(name => setRouteVisible(name, visible));
+}
+
+function deleteRoute(name){
+  if(routeLayers[name]){ map.removeLayer(routeLayers[name].group); delete routeLayers[name]; }
+  delete library[name];
+  persistLibrary();
+  renderLibrary();
+}
+
+function clearLibrary(){
+  if(!confirm('Vider toute la bibliothèque de circuits ?')) return;
+  Object.values(routeLayers).forEach(r => map.removeLayer(r.group));
+  routeLayers = {};
+  library = {};
+  persistLibrary();
+  renderLibrary();
+}
+
+function renderLibrary(){
+  const names = Object.keys(library).sort((a,b) => a.localeCompare(b, 'fr'));
+  document.getElementById('libCount').textContent = `${names.length} circuit${names.length!==1?'s':''}`;
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const filtered = q ? names.filter(n => n.toLowerCase().includes(q)) : names;
+
+  const listEl = document.getElementById('routeList');
+  listEl.innerHTML = '';
+
+  if(names.length === 0){
+    listEl.innerHTML = `<div class="empty-state">Aucun circuit importé pour l'instant.<br>Utilise « + Importer » pour ajouter un CSV.</div>`;
+    return;
+  }
+  if(filtered.length === 0){
+    listEl.innerHTML = `<div class="empty-state">Aucun circuit ne correspond à « ${q} ».</div>`;
+    return;
+  }
+
+  filtered.forEach(name => {
+    const stops = library[name];
+    const color = colorFor(name);
+    const isVisible = routeLayers[name] ? routeLayers[name].visible : false;
+
+    const item = document.createElement('div');
+    item.className = 'route-item';
+    item.innerHTML = `
+      <input type="checkbox" data-name="${name}" ${isVisible ? 'checked' : ''}>
+      <div class="swatch" style="background:${color}"></div>
+      <div class="meta">
+        <div class="name">${name}</div>
+        <div class="count">${stops.length} arrêt${stops.length>1?'s':''}</div>
+      </div>
+      <button class="icon-btn" title="Démarrer la navigation">▶</button>
+      <button class="icon-btn danger" title="Supprimer">✕</button>`;
+
+    item.querySelector('input').addEventListener('change', e => setRouteVisible(name, e.target.checked));
+    item.querySelector('.meta').addEventListener('click', () => {
+      setRouteVisible(name, true);
+      map.fitBounds(ensureLayer(name).bounds, {padding:[40,40]});
+    });
+    item.querySelectorAll('.icon-btn')[0].addEventListener('click', (e) => {
+      e.stopPropagation();
+      startNavigation(name, stops);
+    });
+    item.querySelectorAll('.icon-btn')[1].addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteRoute(name);
+    });
+    listEl.appendChild(item);
+  });
+}
+
+/* ---------------- Navigation en temps réel ---------------- */
+let navState = null;
+const ARRIVAL_RADIUS_M = 45;
+const ETA_THROTTLE_MS = 8000;
+
+function toRad(d){ return d * Math.PI/180; }
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function bearing(lat1, lon1, lat2, lon2){
+  const y = Math.sin(toRad(lon2-lon1)) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lon2-lon1));
+  return (Math.atan2(y,x) * 180/Math.PI + 360) % 360;
+}
+
+function startNavigation(name, stops){
+  if(!('geolocation' in navigator)){
+    alert("Ce navigateur ne supporte pas la géolocalisation.");
+    return;
+  }
+  if(navState) stopNavigation();
+  setRouteVisible(name, true);
+  Object.keys(library).forEach(n => { if(n !== name) setRouteVisible(n, false); });
+
+  navState = { name, stops, idx: 0, watchId: null, liveMarker: null, lastEtaCall: 0 };
+
+  document.getElementById('navPanel').classList.add('active');
+  document.getElementById('navCircuitName').textContent = name;
+  document.getElementById('navError').style.display = 'none';
+
+  const icon = L.divIcon({
+    className:'',
+    html:'<div style="position:relative;"><div class="live-heading" id="liveHeadingArrow"></div><div class="live-dot"></div></div>',
+    iconSize:[18,18], iconAnchor:[9,9]
+  });
+  navState.liveMarker = L.marker(stops[0] ? [stops[0].lat, stops[0].lon] : map.getCenter(), {icon, zIndexOffset:1000}).addTo(map);
+
+  navState.watchId = navigator.geolocation.watchPosition(onNavPosition, onNavError, {
+    enableHighAccuracy:true, maximumAge:2000, timeout:10000
+  });
+
+  updateNavPanel(null);
+}
+
+function onNavError(err){
+  const el = document.getElementById('navError');
+  el.style.display = 'block';
+  el.textContent = err.code === 1
+    ? "Localisation refusée. Autorise l'accès à la position (nécessite aussi une connexion HTTPS ou une page hébergée)."
+    : "Signal GPS indisponible pour le moment.";
+}
+
+async function fetchEtaSeconds(fromLat, fromLon, toLat, toLon){
+  try{
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=false`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.code === 'Ok') return data.routes[0].duration;
+  }catch(e){ /* on garde la dernière estimation connue */ }
+  return null;
+}
+
+function onNavPosition(pos){
+  if(!navState) return;
+  const {latitude, longitude, heading, speed} = pos.coords;
+  navState.liveMarker.setLatLng([latitude, longitude]);
+  map.panTo([latitude, longitude], {animate:true});
+
+  const stop = navState.stops[navState.idx];
+  if(!stop) return;
+
+  const brg = (heading !== null && heading !== undefined && !isNaN(heading) && speed > 0.5)
+    ? heading
+    : bearing(latitude, longitude, stop.lat, stop.lon);
+  const arrowEl = document.getElementById('liveHeadingArrow');
+  if(arrowEl) arrowEl.style.transform = `rotate(${brg}deg)`;
+
+  const d = haversine(latitude, longitude, stop.lat, stop.lon);
+  updateNavPanel(d);
+
+  const now = Date.now();
+  if(now - navState.lastEtaCall > ETA_THROTTLE_MS){
+    navState.lastEtaCall = now;
+    fetchEtaSeconds(latitude, longitude, stop.lat, stop.lon).then(sec => {
+      if(sec !== null && navState) updateEtaClock(sec);
+    });
+  }
+
+  if(d < ARRIVAL_RADIUS_M){
+    if(navState.idx < navState.stops.length - 1){
+      navState.idx += 1;
+      navState.lastEtaCall = 0; // force un recalcul immédiat pour le prochain arrêt
+    } else {
+      updateNavPanel(0, true);
+    }
+  }
+}
+
+function updateEtaClock(seconds){
+  const arrival = new Date(Date.now() + seconds*1000);
+  const hh = String(arrival.getHours()).padStart(2,'0');
+  const mm = String(arrival.getMinutes()).padStart(2,'0');
+  document.getElementById('navEta').textContent = `${hh}:${mm}`;
+}
+
+function updateNavPanel(distance, finished){
+  const stops = navState.stops;
+  const idx = navState.idx;
+  document.getElementById('navProgress').textContent = `${idx+1}/${stops.length}`;
+  document.getElementById('navStopName').textContent = stops[idx] ? (stops[idx].arret || `Arrêt ${idx+1}`) : '—';
+
+  if(finished){
+    document.getElementById('navDist').textContent = '0 m';
+    document.getElementById('navEta').textContent = 'Arrivé';
+    document.getElementById('navSub').textContent = 'Dernier arrêt du circuit atteint.';
+    return;
+  }
+  if(distance === null || distance === undefined){
+    document.getElementById('navDist').textContent = '—';
+    document.getElementById('navEta').textContent = '—';
+    document.getElementById('navSub').textContent = 'Recherche du signal GPS…';
+    return;
+  }
+  document.getElementById('navDist').textContent = distance < 1000 ? `${Math.round(distance)} m` : `${(distance/1000).toFixed(1)} km`;
+  document.getElementById('navSub').textContent = idx < stops.length - 1
+    ? `Puis : ${stops[idx+1].arret || 'Arrêt ' + (idx+2)}`
+    : 'Dernier arrêt du circuit';
+}
+
+function stopNavigation(){
+  if(!navState) return;
+  if(navState.watchId !== null) navigator.geolocation.clearWatch(navState.watchId);
+  if(navState.liveMarker) map.removeLayer(navState.liveMarker);
+  navState = null;
+  document.getElementById('navPanel').classList.remove('active');
+}
+document.getElementById('navStopBtn').addEventListener('click', stopNavigation);
+
+/* ---------------- Démarrage ---------------- */
+library = loadLibraryFromStorage();
+if(Object.keys(library).length === 0){
+  // Bibliothèque vide : on ajoute un circuit d'exemple pour démonstration
+  Object.assign(library, buildRoutes(Papa.parse(SAMPLE_CSV, {header:true, skipEmptyLines:true}).data));
+  persistLibrary();
+}
+renderLibrary();
+if(!storageOK){
+  setStatus("Aperçu sans stockage persistant : héberge le fichier pour conserver ta bibliothèque entre deux visites.", 'err');
+}
+</script>
+</body>
+</html>
